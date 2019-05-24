@@ -1,0 +1,89 @@
+daemon off;
+# Heroku dynos have at least 4 cores.
+worker_processes <%= ENV['NGINX_WORKERS'] || 4 %>;
+
+events {
+  use epoll;
+  accept_mutex on;
+  worker_connections 1024;
+}
+
+http {
+  gzip on;
+  gzip_comp_level 2;
+  gzip_min_length 512;
+
+  server_tokens off;
+
+  log_format l2met 'measure#nginx.service=$request_time request_id=$http_x_request_id';
+  access_log logs/nginx/access.log l2met;
+  error_log logs/nginx/error.log;
+
+  include mime.types;
+  default_type application/octet-stream;
+  sendfile on;
+
+  # Must read the body in 5 seconds.
+  client_body_timeout <%= ENV['NGINX_CLIENT_BODY_TIMEOUT'] || 5 %>;
+
+  # *.pixiv-nginx.herokuapp.com
+server
+{
+    listen 443
+    server_name ~^([^.]+)\.pixiv-nginx\.herokuapp\.com$;
+    set $domain $1;
+    if ($http_user_agent ~* "qihoobot|Baiduspider|Googlebot|Googlebot-Mobile|Googlebot-Image|Mediapartners-Google|Adsbot-Google|Feedfetcher-Google|Yahoo! Slurp|Yahoo! Slurp China|YoudaoBot|Sosospider|Sogou spider|Sogou web spider|MSNBot|ia_archiver|Tomato Bot|^$") {  
+        return 403;
+     }
+
+    resolver 8.8.8.8;
+
+    location ~ .*
+    {
+        proxy_set_header Host $domain.pixiv.net;
+        proxy_set_header Referer "https://www.pixiv.net";
+        proxy_cookie_domain pixiv.net pixiv-nginx.herokuapp.com;
+        proxy_pass https://$domain.pixiv.net;
+        proxy_set_header Accept-Encoding "";
+
+        sub_filter "pixiv.net" "pixiv-nginx.herokuapp.com";
+        sub_filter "pximg.net" "pximg.pixiv-nginx.herokuapp.com";
+        # 防止错误上报暴露站点
+        sub_filter "js_error.php" "block_js_error";
+        # 防止谷歌服务暴露站点，同时也可以加快网站加载
+        sub_filter "www.google" "block_google";
+        sub_filter_once off;
+        sub_filter_types *;
+    }
+}
+
+# *.pximg.pixiv-nginx.herokuapp.com
+server
+{
+    listen 443
+    server_name ~^([^.]+)\.pximg\.pixiv-nginx\.herokuapp\.com$;
+    set $domain $1;
+    if ($http_user_agent ~* "qihoobot|Baiduspider|Googlebot|Googlebot-Mobile|Googlebot-Image|Mediapartners-Google|Adsbot-Google|Feedfetcher-Google|Yahoo! Slurp|Yahoo! Slurp China|YoudaoBot|Sosospider|Sogou spider|Sogou web spider|MSNBot|ia_archiver|Tomato Bot|^$") {  
+        return 403;
+     }
+
+    resolver 8.8.8.8;
+
+    location ~ .*
+    {
+        proxy_set_header Host $domain.pximg.net;
+        proxy_set_header Referer "https://www.pixiv.net";
+        proxy_pass https://$domain.pximg.net;
+        proxy_set_header Accept-Encoding "";
+
+        sub_filter "pixiv.net" "pixiv-nginx.herokuapp.com";
+        sub_filter "pximg.net" "pximg.pixiv-nginx.herokuapp.com";
+        # 防止错误上报暴露站点
+        sub_filter "js_error.php" "block_js_error";
+        # 防止谷歌服务暴露站点，同时也可以加快网站加载
+        sub_filter "www.google" "block_google";
+        sub_filter_once off;
+        sub_filter_types *;
+    }
+}
+}
